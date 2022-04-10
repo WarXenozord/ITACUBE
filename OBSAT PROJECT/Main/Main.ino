@@ -6,15 +6,25 @@
 //---------------------------------------------------------------------------------//
 //Libs
 
-#include "NMEAGPS.h"
-#include "PION_System.h"
-#include "ArduinoJson.h"
-#include "WiFi.h"
-#include "HTTPClient.h"
+#include "NMEAGPS.h" // Traduz os dados brutos do gps
+#include "PION_System.h" // Sistema base do cubesat
+#include "ArduinoJson.h" // Formata a mensagem JSON
+#include "WiFi.h" // Utiliza wifi do ESP32 para conectar ao hotspot do balao
+#include "HTTPClient.h" // Cria um cliente para a requisicao http
+#include "SPI.h" // protocolo SPI para o LORA
+
+//---------------------------------------------------------------------------------//
+//*********************************************************************************//
+//---------------------------------------------------------------------------------//
+//Defines
 
 #define TEAM 41 //Numero da Equipe
+
 #define RXD2 16 //Seriais do GPS
 #define TXD2 17
+
+#define RXD1 13// Seriais do Lora
+#define TXD1 14
 
 //---------------------------------------------------------------------------------//
 //*********************************************************************************//
@@ -34,6 +44,20 @@ const time_t timeDelay = 5; // Delay entre as mensagens para o server, em segund
 NMEAGPS gps; // objeto do gps
 gps_fix fix; //Ultima posicao medida pelo gps
 
+//---------------------------------------------------------------------------------//
+//*********************************************************************************//
+//---------------------------------------------------------------------------------//
+//Funcoes do LoRa
+bool setLoRa(){
+  Serial2.begin(9600, SERIAL_8N1, RXD2, TXD2);
+  while(1){
+    Serial2.println("Lero Lero");
+  }
+}
+
+void radioTransmit(const String message){
+  Serial1.print(message);
+}
 //---------------------------------------------------------------------------------//
 //*********************************************************************************//
 //---------------------------------------------------------------------------------//
@@ -64,10 +88,12 @@ void loop(){
   gpsRead();
   if(time(NULL) - lastTime > timeDelay)
   {
+    String message;
     cubeSat.setRGB(GREEN);
-    StaticJsonDocument<400> message; // Documento do Json da mensagem com capacidade de 400 bytes
-    createMsg(message);
+    createMsg(&message);
+    Serial.println(message);
     sendData(message);
+    radioTransmit(message);
     lastTime = time(NULL);
     delay(1000);
   } else {
@@ -80,7 +106,8 @@ void loop(){
 //---------------------------------------------------------------------------------//
 //Funcoes da Wifi
 
-void createMsg(JsonDocument& message){
+void createMsg(String *query){
+  StaticJsonDocument<400> message; // Documento do Json da mensagem com capacidade de 400 bytes
   message["equipe"] = TEAM;
   message["bateria"] = cubeSat.getBattery();
   message["temperatura"] = cubeSat.getTemperature();
@@ -109,6 +136,7 @@ void createMsg(JsonDocument& message){
     P[2] = "N/A";
   }
   payload["T"] =  String(fix.dateTime.hours) + ":" + String(fix.dateTime.minutes) + ":" + String(fix.dateTime.seconds);
+  serializeJsonPretty(message, *query); 
 }
 
 
@@ -129,10 +157,7 @@ void networkConnect(){
   }*/
 }
 
-void sendData(const JsonDocument& message){
-        String query;
-      serializeJsonPretty(message, query); 
-      Serial.println(query);
+void sendData(const String query){
     if(WiFi.status()== WL_CONNECTED){
       WiFiClient client;
       HTTPClient http;
@@ -158,51 +183,27 @@ void sendData(const JsonDocument& message){
 //Funcoes do GPS
 
 void gpsSetup(){
-  Serial2.begin(9600, SERIAL_8N1, RXD2, TXD2);
+  Serial1.begin(9600, SERIAL_8N1, RXD1, TXD1);
   
   // Muda serial do GPS para 38400 baud
-  Serial2.print("$PCAS01,3*1F\r\n"); // obtido via Gnss Toolkit, sempre incluir \r e \n
-  Serial2.flush();
-  Serial2.end();
+  Serial1.print("$PCAS01,3*1F\r\n"); // obtido via Gnss Toolkit, sempre incluir \r e \n
+  Serial1.flush();
+  Serial1.end();
   delay(100);
-  Serial2.begin(38400, SERIAL_8N1, RXD2, TXD2);
+  Serial1.begin(38400, SERIAL_8N1, RXD1, TXD1);
 
   // Muda a amostragem do GPS
   //Serial2.print("$PCAS02,1000*2E\r\n"); // 1hz
-  Serial2.print("$PCAS02,200*1D\r\n"); // 5hz
+  Serial1.print("$PCAS02,200*1D\r\n"); // 5hz
 
   // Usa todas as constelacoes disponiveis
-  Serial2.print("$PCAS04,2*1B\r\n"); // obtido via Gnss Toolkit, sempre incluir \r e \n
+  Serial1.print("$PCAS04,2*1B\r\n"); // obtido via Gnss Toolkit, sempre incluir \r e \n
 }
 
 void gpsRead(){
-  if (gps.available(Serial2))
+  if (gps.available(Serial1))
   {
-    fix = gps.read();
+    fix = gps.read();// Salva os dados coletados pelo gps
     //Salvar dados no SD Card
-
-    
-    //Traduz a mensagem NMEA do GPS para portugues
-    Serial.print( F("Satelites:") );
-    if (fix.valid.satellites)
-      Serial.print( fix.satellites );
-    Serial.print( F("\nLatitude:") );
-    if (fix.valid.location)
-      Serial.print( fix.latitude(), 6 );
-    Serial.print( F("\nLongitude:") );
-    if (fix.valid.location)
-      Serial.print( fix.longitude(), 6 );
-    Serial.print( F("\nAltitude:") );
-    if (fix.valid.altitude)
-      Serial.print( fix.altitude());
-    if (fix.valid.time){
-      Serial.print( F("\nTempo: ") );
-      Serial.print(fix.dateTime.hours - 3); // UTC-3
-      Serial.print( F(":") );
-      Serial.print(fix.dateTime.minutes);
-      Serial.print( F(":") );
-      Serial.print(fix.dateTime.seconds);
-    }
-    Serial.println();
   }
 }

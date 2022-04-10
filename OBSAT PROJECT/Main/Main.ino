@@ -49,14 +49,34 @@ gps_fix fix; //Ultima posicao medida pelo gps
 //---------------------------------------------------------------------------------//
 //Funcoes do LoRa
 bool setLoRa(){
-  Serial2.begin(9600, SERIAL_8N1, RXD2, TXD2);
-  while(1){
-    Serial2.println("Lero Lero");
-  }
+  Serial2.begin(115200, SERIAL_8N1, RXD2, TXD2);
 }
 
 void radioTransmit(const String message){
-  Serial1.print(message);
+  Serial2.print(message);
+  Serial2.print('!');
+}
+
+void createLoRaMsg(String *QLoRaMsg)
+{
+  StaticJsonDocument<255> message;
+  JsonArray P = message.createNestedArray("P");
+  message["S"] = fix.satellites;
+  if (fix.valid.location){
+    P[0] = String(fix.latitude(),6);
+    P[1] = String(fix.longitude(),6);
+  }else{
+    // poderia-se fazer algo para aproveitar o ultimo fix valido feito
+    P[0] = "N/A";
+    P[1] = "N/A";
+  }
+  if (fix.valid.altitude){
+    P[2] = String(fix.altitude(),1);
+  }else{
+    P[2] = "N/A";
+  }
+  message["T"] =  String(fix.dateTime.hours) + ":" + String(fix.dateTime.minutes) + ":" + String(fix.dateTime.seconds);
+  serializeJson(message, *QLoRaMsg); 
 }
 //---------------------------------------------------------------------------------//
 //*********************************************************************************//
@@ -82,18 +102,26 @@ void setup(){
   }
   lastTime = time(NULL);
   gpsSetup();
+  setLoRa();
 }
 
 void loop(){
   gpsRead();
   if(time(NULL) - lastTime > timeDelay)
   {
-    String message;
     cubeSat.setRGB(GREEN);
-    createMsg(&message);
-    Serial.println(message);
-    sendData(message);
-    radioTransmit(message);
+    
+    String QryMsg;
+    
+    createQryMsg(&QryMsg);
+    sendData(QryMsg);
+
+    String LoRaMsg;
+
+    createLoRaMsg(&LoRaMsg);
+    radioTransmit(LoRaMsg);
+    Serial.println(LoRaMsg);
+    
     lastTime = time(NULL);
     delay(1000);
   } else {
@@ -106,7 +134,7 @@ void loop(){
 //---------------------------------------------------------------------------------//
 //Funcoes da Wifi
 
-void createMsg(String *query){
+void createQryMsg(String *query){
   StaticJsonDocument<400> message; // Documento do Json da mensagem com capacidade de 400 bytes
   message["equipe"] = TEAM;
   message["bateria"] = cubeSat.getBattery();

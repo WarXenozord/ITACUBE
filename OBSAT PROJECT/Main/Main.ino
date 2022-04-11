@@ -37,8 +37,10 @@ System cubeSat;
 //Comunicacao Wifi
 const char* serverName = "http://192.168.0.1:8080/"; // Url do Server
 WiFiClient client; // Cliente que comunica com o server
-time_t lastTime;
-const time_t timeDelay = 5; // Delay entre as mensagens para o server, em segundos
+time_t lastTimeHttp;
+time_t lastTimeLoRa;
+const time_t timeDelay = 240; // Delay entre as mensagens para o server, em segundos
+const time_t LoRaDelay = 10; // Delay entre as mensagens do LoRa, em segundos
 
 //Gps
 NMEAGPS gps; // objeto do gps
@@ -100,29 +102,35 @@ void setup(){
       delay(1000);
       //fazer algo sobre esse erro
   }
-  lastTime = time(NULL);
+  lastTimeHttp = time(NULL);
+  lastTimeLoRa = time(NULL);
   gpsSetup();
   setLoRa();
 }
 
 void loop(){
   gpsRead();
-  if(time(NULL) - lastTime > timeDelay)
+  time_t t = time(NULL);
+  if(t - lastTimeLoRa > LoRaDelay)
   {
     cubeSat.setRGB(GREEN);
+    if(t - lastTimeHttp > timeDelay)
+    {
+      String QryMsg;
     
-    String QryMsg;
+      createQryMsg(&QryMsg);
+      sendData(QryMsg);
+      Serial.println(QryMsg);
+      lastTimeHttp = time(NULL);
+    }
     
-    createQryMsg(&QryMsg);
-    sendData(QryMsg);
-
     String LoRaMsg;
 
     createLoRaMsg(&LoRaMsg);
     radioTransmit(LoRaMsg);
     Serial.println(LoRaMsg);
     
-    lastTime = time(NULL);
+    lastTimeLoRa = time(NULL);
     delay(1000);
   } else {
     cubeSat.setRGB(OFF);

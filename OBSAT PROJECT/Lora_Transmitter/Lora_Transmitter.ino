@@ -26,7 +26,6 @@ void loop() {
        }
      }
    }
-   Serial.print(message);
    LoRa.beginPacket();
    LoRa.print(message);
    LoRa.endPacket();

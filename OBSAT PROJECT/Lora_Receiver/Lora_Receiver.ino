@@ -16,5 +16,6 @@ void loop () {
       st = (char)LoRa.read ();
       Serial.print(st);
     }
+    Serial.println("");
   }
 }

@@ -114,12 +114,12 @@ void createFileFirstLine(fs::FS &fs, const char * path){
 void appendFile(fs::FS &fs, const char * path, TickType_t time){
   //Abre o arquivo do SD para a memória RAM
   File file = fs.open(path, FILE_APPEND);
-  if(!file){
+  while(!file){
     Serial.println("Falha ao abrir para gravacao");
     return;
   }
   // Salva no CSV o dado, seguido de uma vírgula. 
-  file.print(indec);
+  file.print(float(indec));
   file.write(',');
   file.print(Sensors::temperature);
   file.write(',');
@@ -151,9 +151,9 @@ void appendFile(fs::FS &fs, const char * path, TickType_t time){
   file.write(',');
   if(fix.valid.location)
   {
-    file.print(fix.latitude());
+    file.print(float(fix.latitude()));
     file.write(',');
-    file.print(fix.longitude());
+    file.print(float(fix.longitude()));
   }else{
     file.print(0);
     file.write(',');
@@ -162,10 +162,10 @@ void appendFile(fs::FS &fs, const char * path, TickType_t time){
   file.write(',');
   if(fix.valid.altitude)
   {
-    file.print(fix.altitude());
+    file.print(float(fix.altitude()));
   }
   file.write(',');
-  file.print(fix.satellites);
+  file.print(float(fix.satellites));
   file.write(',');
   file.println(System::battery);
   // Fecha o arquivo

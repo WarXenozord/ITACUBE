@@ -12,6 +12,8 @@
 #include "WiFi.h" // Utiliza wifi do ESP32 para conectar ao hotspot do balao
 #include "HTTPClient.h" // Cria um cliente para a requisicao http
 #include "SPI.h" // protocolo SPI para o LORA
+#include "FS.h" // interface cartao SD
+#include "PION_Sensors.h"
 
 //---------------------------------------------------------------------------------//
 //*********************************************************************************//
@@ -41,6 +43,7 @@ time_t lastTimeHttp;
 time_t lastTimeLoRa;
 const time_t timeDelay = 240; // Delay entre as mensagens para o server, em segundos
 const time_t LoRaDelay = 10; // Delay entre as mensagens do LoRa, em segundos
+uint64_t indec = 0;
 
 //Gps
 NMEAGPS gps; // objeto do gps
@@ -83,11 +86,103 @@ void createLoRaMsg(String *QLoRaMsg)
 //---------------------------------------------------------------------------------//
 //*********************************************************************************//
 //---------------------------------------------------------------------------------//
+//Funcoes do SD
+
+void createFileFirstLine(fs::FS &fs, const char * path){
+  // Mostra o nome do arquivo
+  Serial.printf("Escrevendo em: %s\n", path);
+  
+  //Abre o arquivo do SD para a memória RAM
+  File file = fs.open(path, FILE_WRITE);
+  if(!file){
+    Serial.println("Falha ao abrir para escrita");
+    return;
+  }
+  // Cria a primeira linha separada por vírgulas do CSV. 
+  const char * message = "index,temperatura(C),umidade(%),pressao(Pa),co2(ppm),luminosidade(%),acelX(m/s2),accelY,acelZ,giroX(graus/s),giroY,giroZ,magX(uT),magY,magZ,Lat,Lon,Alt,Sat,bateria(%)";
+  
+  // Escreve a mensagem criada anteriormente
+  if(file.println(message)){
+    Serial.println("Escrita Começou");
+  } else {
+    Serial.println("Falha na escrita");
+  }
+  // Fecha o arquivo
+  file.close();
+}
+
+void appendFile(fs::FS &fs, const char * path, TickType_t time){
+  //Abre o arquivo do SD para a memória RAM
+  File file = fs.open(path, FILE_APPEND);
+  if(!file){
+    Serial.println("Falha ao abrir para gravacao");
+    return;
+  }
+  // Salva no CSV o dado, seguido de uma vírgula. 
+  file.print(indec);
+  file.write(',');
+  file.print(Sensors::temperature);
+  file.write(',');
+  file.print(Sensors::humidity);
+  file.write(',');
+  file.print(Sensors::pressure);
+  file.write(',');
+  file.print(Sensors::CO2Level);
+  file.write(',');
+  file.print(Sensors::luminosity);
+  file.write(',');
+  file.print(Sensors::accel[0]);
+  file.write(',');
+  file.print(Sensors::accel[1]);
+  file.write(',');
+  file.print(Sensors::accel[2]);
+  file.write(',');
+  file.print(Sensors::gyro[0]);
+  file.write(',');
+  file.print(Sensors::gyro[1]);
+  file.write(',');
+  file.print(Sensors::gyro[2]);
+  file.write(',');
+  file.print(Sensors::mag[0]);
+  file.write(',');
+  file.print(Sensors::mag[1]);
+  file.write(',');
+  file.print(Sensors::mag[2]);
+  file.write(',');
+  if(fix.valid.location)
+  {
+    file.print(fix.latitude());
+    file.write(',');
+    file.print(fix.longitude());
+  }else{
+    file.print(0);
+    file.write(',');
+    file.print(0);
+  }
+  file.write(',');
+  if(fix.valid.altitude)
+  {
+    file.print(fix.altitude());
+  }
+  file.write(',');
+  file.print(fix.satellites);
+  file.write(',');
+  file.println(System::battery);
+  // Fecha o arquivo
+  file.close();
+}
+
+
+//---------------------------------------------------------------------------------//
+//*********************************************************************************//
+//---------------------------------------------------------------------------------//
 //Funcoes Gerais
 
 void setup(){
   // Inicializa seu CubeSat, e seus periféricos 
   cubeSat.init();
+  cubeSat.deactivateSDLog();
+  cubeSat.createLogOnSD();
   delay(3000); // Da um tempo para o satelite iniciar (nao misturar os sinais de luz das outras etapas)
   networkConnect();
   if(cubeSat.getSDStatus() == 1)
@@ -156,7 +251,7 @@ void createQryMsg(String *query){
     giroscopio[i] = cubeSat.getGyroscope(i);
   }
   JsonObject payload = message.createNestedObject("payload");
-    JsonArray P = message.createNestedArray("P");
+  JsonArray P = message.createNestedArray("P");
   payload["S"] = fix.satellites;
   if (fix.valid.location){
     P[0] = String(fix.latitude(),6);
@@ -240,6 +335,7 @@ void gpsRead(){
   if (gps.available(Serial1))
   {
     fix = gps.read();// Salva os dados coletados pelo gps
-    //Salvar dados no SD Card
+    indec++;
+    cubeSat.logOnSDFile();
   }
 }

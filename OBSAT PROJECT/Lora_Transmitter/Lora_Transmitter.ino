@@ -9,6 +9,7 @@ void setup() {
   Heltec.begin(false, true, false, true, BAND);
   Serial.begin(115200, SERIAL_8N1, 3, 1);
   Serial2.begin(115200, SERIAL_8N1, RXD, TXD);
+  LoRa.setTxPower(20,RF_PACONFIG_PASELECT_PABOOST);
   delay(100);
 }
 

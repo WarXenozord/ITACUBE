@@ -14,6 +14,8 @@
 #include "SPI.h" // protocolo SPI para o LORA
 #include "FS.h" // interface cartao SD
 #include "PION_Sensors.h"
+#include "OneWire.h" // Usada no sensor de temperatura
+#include "MPU9250.h" // Usado para medir a temperatura do mpu9250
 
 //---------------------------------------------------------------------------------//
 //*********************************************************************************//
@@ -22,11 +24,13 @@
 
 #define TEAM 41 //Numero da Equipe
 
-#define RXD2 16 //Seriais do GPS
+#define RXD2 16 //Seriais do Lora
 #define TXD2 17
 
-#define RXD1 13// Seriais do Lora
+#define RXD1 13// Seriais do Gps
 #define TXD1 14
+
+#define DS18S20_Pin 2
 
 //---------------------------------------------------------------------------------//
 //*********************************************************************************//
@@ -41,13 +45,66 @@ const char* serverName = "http://192.168.0.1:8080/"; // Url do Server
 WiFiClient client; // Cliente que comunica com o server
 time_t lastTimeHttp;
 time_t lastTimeLoRa;
-const time_t timeDelay = 240; // Delay entre as mensagens para o server, em segundos
+const time_t timeDelay = 10; // Delay entre as mensagens para o server, em segundos
 const time_t LoRaDelay = 10; // Delay entre as mensagens do LoRa, em segundos
 uint64_t indec = 0;
 
 //Gps
 NMEAGPS gps; // objeto do gps
 gps_fix fix; //Ultima posicao medida pelo gps
+
+//Sensor de Temperatura
+OneWire ds(4);
+
+//---------------------------------------------------------------------------------//
+//*********************************************************************************//
+//---------------------------------------------------------------------------------//
+//Sensor de temperatura
+float getTemp(){
+  //returns the temperature from one DS18S20 in DEG Celsius
+
+  byte data[12];
+  byte addr[8];
+
+  if ( !ds.search(addr)) {
+      //no more sensors on chain, reset search
+      ds.reset_search();
+      return -1000;
+  }
+
+  if ( OneWire::crc8( addr, 7) != addr[7]) {
+      Serial.println("CRC is not valid!");
+      return -1000;
+  }
+
+  if ( addr[0] != 0x10 && addr[0] != 0x28) {
+      Serial.print("Device is not recognized");
+      return -1000;
+  }
+
+  ds.reset();
+  ds.select(addr);
+  ds.write(0x44,1); // start conversion, with parasite power on at the end
+
+  byte present = ds.reset();
+  ds.select(addr);    
+  ds.write(0xBE); // Read Scratchpad
+
+  
+  for (int i = 0; i < 9; i++) { // we need 9 bytes
+    data[i] = ds.read();
+  }
+  
+  ds.reset_search();
+  
+  byte MSB = data[1];
+  byte LSB = data[0];
+
+  float tempRead = ((MSB << 8) | LSB); //using two's compliment
+  float TemperatureSum = tempRead / 16;
+  
+  return TemperatureSum;
+}
 
 //---------------------------------------------------------------------------------//
 //*********************************************************************************//
@@ -66,6 +123,7 @@ void createLoRaMsg(String *QLoRaMsg)
 {
   StaticJsonDocument<255> message;
   JsonArray P = message.createNestedArray("P");
+  message["Tp"] = cubeSat.getTemperatureMpu();
   message["S"] = fix.satellites;
   if (fix.valid.location){
     P[0] = String(fix.latitude(),6);

@@ -1,42 +1,30 @@
+//This module handles Geiger Counter Code With Interrupts
+//J. Libonatti
+
 #include "Curie.h"
 
-#define COUNT_TIME 10000
-#define GEIGER_PIN 36
+#define GEIGER_PIN 36               // Connect to GEIGER INT2 Pin
 
-hw_timer_t * Timer = NULL;
-portMUX_TYPE timerMux = portMUX_INITIALIZER_UNLOCKED;
-
-volatile unsigned int counts = 0;
-volatile unsigned int totalCounts = 0;
-volatile unsigned long lastTf = 0;
+volatile unsigned int counts = 0;  // Volatile as this variable is changed in interrupts
+struct timeval tv_now;             // Stores RTC timeofday
+unsigned long t0;                  // Stores t0
 
 
-void IRAM_ATTR onTime() {
-	portENTER_CRITICAL_ISR(&timerMux);
-    totalCounts = counts;
-    lastTf = millis();
-    counts = 0;
-	portEXIT_CRITICAL_ISR(&timerMux);
-}
-
-void countInterrupt(){ //adds counts on interruption
+void countInterrupt(){              // Adds to the geiger particle counts on interruption
   counts++;
 }
 
-int SetGeiger(){
-  pinMode(GEIGER_PIN, INPUT);
-  attachInterrupt(GEIGER_PIN, countInterrupt, FALLING);
-  // Configure Prescaler to 80, as our timer runs @ 80Mhz
-	// Giving an output of 80,000,000 / 80 = 1,000,000 ticks / second
-	Timer = timerBegin(0, 80, true);                
-	timerAttachInterrupt(Timer, &onTime, true);    
-	// Fire Interrupt every 1m ticks, so 1s
-	timerAlarmWrite(Timer, 10000000, true);			
-	timerAlarmEnable(Timer);
-  return 0;
+int SetGeiger(){                                                        //  Initializes Geiger
+  pinMode(GEIGER_PIN, INPUT);                                           // Sets Geiger Pin to input mode
+  attachInterrupt(GEIGER_PIN, countInterrupt, FALLING);                 // Everytime the pin voltage falls, which happens when geiger
+  gettimeofday(&tv_now, NULL);                                          // Reads Time from ESP32 RTC
+  t0 = (unsigned long)(tv_now.tv_sec * 1000000 + tv_now.tv_usec)/1000;  // Gets t0
+  return 0;                                                             // Counts a particle, the function countInterrupt will be called
 }
 
 void ReadGeiger(DataGeiger *Geiger){
-  Geiger->counts = totalCounts;
-  Geiger->tf = lastTf;
+  gettimeofday(&tv_now, NULL);
+  Geiger->tf = (unsigned long)((tv_now.tv_sec * 1000000 + tv_now.tv_usec)/1000 - t0);     //Geiger tf from internal RTC
+  Geiger->counts = counts;                                                                //Geiger counts from interrupts
+  counts -= Geiger->counts;         //If an interrupt happens in this brief time, the counted particle won't be discarded
 }

@@ -1,40 +1,39 @@
 // This module formats handles the ESP32 wifi module and http requisition according to OBSAT Specs.
 // J. Libonatti
 
-#include <WiFi.h>
 #include "Curie.h"
-#include <HTTPClient.h>
+#include <WiFi.h>         // Wifi Lib
+#include <HTTPClient.h>   // Http Lib
 
-WiFiClient client; // Cliente que comunica com o server
+WiFiClient client;        // Client that communicates with wifi server
 
-void SetWifi(){
-  // Para qualquer aplicação bluetooth que possa existir
-  btStop();
+int SetWifi(){                          // Starts wifi and connects to OBSAT network
+  btStop();                             // Stops any bluetooth so it won't trouble us ;)
 
-  // Começa WiFi se conectando ao SSID fornecido com a senha fornecida
-  WiFi.begin("OBSAT_WIFI", "OBSatZenith1000");
+  WiFi.begin(wifiSSID, wifiPassword);   // Starts wifi connecting to the given SSID with the given password
+  delay(1000);                          // Waits a bit for the wifi to connect (wait for it, wait for it)
   
-  // Espera o Status de conectado
-  /*while (WiFi.status() != WL_CONNECTED) {
-    cubeSat.setRGB(BLUE);
-    delay(1000);
-    cubeSat.setRGB(OFF);
-    delay(1000);
-  }*/
+  if(WiFi.status() != WL_CONNECTED)     // If it failed (in it's only purpose) 
+    return -71;                         // return error
+
+  WiFi.setSleep(WIFI_PS_MAX_MODEM);     // Set modem to max energy saving
+  WiFi.setTxPower(WIFI_POWER_5dBm);     // Set Tx to a lower power level as the hotspot is placed very near
+  return 0;
 }
 
 void SendHttpRequest(const String query){
-    if(WiFi.status()== WL_CONNECTED){
-      HTTPClient http;
+    if(WiFi.status()== WL_CONNECTED){           // Checks if wifi is still connected
+      HTTPClient http;                          // Starts an http client
     
-      http.begin(client, serverName);
-      int httpResponseCode = http.POST(query);
+      http.begin(client, serverName);           // Starts connection with the http server
+      int httpResponseCode = http.POST(query);  // Posts an http query to the http server and retrieves response code
 
-      Serial.print("HTTP Response code: ");
-      Serial.println(httpResponseCode);
+      if(httpResponseCode != 200){              // checks if http was sucessful
+          // (reminder: do throw a runtime error handler here later ~J)
+      };
         
-      http.end();
+      http.end();                               // Finishes http
     } /*else {
-      //fazer algo sobre esse erro
+          // (reminder: do throw a runtime error handler here later ~J)
     }*/
 }

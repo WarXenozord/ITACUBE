@@ -1,60 +1,77 @@
+// This module formats handles miscellaneous operations like reading the battery, errors and human I/O.
+// J. Libonatti
+
 //-------------------Battery-----------------------------//
 
-#define R1 11.0//kOhm
-#define R2 9.64 //kOhm
-#define SAMPLES 8 //Samples at each reading
+#include <driver/adc.h> //Driver for adc
 
-float vRefScale = (3.3f / 4096.0f) * ((R1 + R2) / R2);
+#define R1 9.8          // 1st divider resistor kOhm
+#define R2 9.58         // 2nd divider resistor kOhm
+#define SAMPLES 8       // Samples at each reading
+const float vRefScale = (3.3 / 4096.0) * ((R1 + R2) / R2); // Scale from analogread raw output to vBat
 
-int SetBattery(){
-  pinMode(37, INPUT);
+int SetBattery(){                                             // Starts battery sensor and checks battery voltage
+  pinMode(37, INPUT);                                         // Input mode as we are going to read only
+  adc1_config_width(ADC_WIDTH_12Bit);                         // set ADC resolution to max
+  adc1_config_channel_atten(ADC1_CHANNEL_1, ADC_ATTEN_DB_11); // set ADC attenuation (allows higher voltage input)
+  int bat =  ReadBattery();                                   // Reads the battery level once (level in %)
+  if(bat < -5 || bat > 105)                                   // If battery level is invalid
+    return -51;                                               // Return error
+  if(bat < 20)                                                // If battery level is too low
+    return -52;                                               // Return error
   return 0;
 }
 
-int ReadBattery(){
-  float reading = 0.0;
-  for(int i = 0; i < SAMPLES; i++)
-  {
-    reading += analogRead(37);
-  }
-  reading /= SAMPLES;
-  float voltage = reading * vRefScale;
-  return (int) ((voltage - 3.5)/(4.2 - 3.5) * 100.0);
+int ReadBattery(){                                      // Reads Battery level from 0 to 100%
+  uint32_t reading = 0;
+  for(int i = 0; i < SAMPLES; i++)                      // gets the defined number of samples
+    reading += adc1_get_raw(ADC1_CHANNEL_1);            // sum the values of all samples
+  reading /= SAMPLES;                                   // divides by the number of samples to get the average
+  float voltage = reading * vRefScale;                  // converts from raw to battery voltage
+  return (int) ((voltage - 3.5)/(4.2 - 3.5) * 100.0);   // converts from battery voltage to power level
 }
 
 //--------------------LED and Buzzer------------------//
 
-void SetLED(){
-  pinMode(32, OUTPUT);
+void SetLED(){              // Starts LED                              
+  pinMode(32, OUTPUT);      // Pin on output for led
+  digitalWrite(32, HIGH);   // Leds starts on
+}
+
+void LEDOn(){               // Turns LED on
   digitalWrite(32, HIGH);
 }
 
-void LEDOn(){
-  digitalWrite(32, HIGH);
-}
-
-void LEDOff(){
+void LEDOff(){              // Turns LED off
   digitalWrite(32, LOW);  
 }
 
-void SetBuzzer(){
-  pinMode(33, OUTPUT);
+void SetBuzzer(){           // Starts Buzzer
+  pinMode(33, OUTPUT);      // Pin on output for buzzer
 }
 
-void BuzzerTone(int t){
+void BuzzerTone(int t){     // Rings the buzzer for t milliseconds (USE ONLY ON SETUP AS IT USES DELAY)
   digitalWrite(33,HIGH);
   delay(t);
   digitalWrite(33,LOW);
 }
 
+void BuzzerOn(int t){       // Turns Buzzer on
+  digitalWrite(33,HIGH);
+}
+
+void BuzzerOff(int t){      // Turns Buzzer off
+  digitalWrite(33,LOW);
+}
+
 //---------------Error--------------//
 
-void errorHandler(int errorCode){
+void errorHandler(int errorCode){  // Deals with errors in setup
 
-  switch(errorCode){
-    case 0:
+  switch(errorCode){               // Actions for each error
+    case 0:   //Not an error
       return;
-    case -1: //General Error 1:
+    case -1:  //General Error 1:
     case -11: //MPU6050 Error 1: Unable to Reset
     case -12: //MPU6050 Error 2: Unable to Config Accel Range
     case -13: //MPU6050 Error 3: Unable to Config Gyro Range
@@ -65,94 +82,66 @@ void errorHandler(int errorCode){
     case -23: //QMC5883L Error 3: Unable to Config
     case -31: //BMP180 Error 1: Unable to Reset
     case -32: //BMP180 Error 2: Unable to Identify
+    case -41: //GPS Error 1: Unable to Config
+    case -51: //BAT Error 1: Invalid Reading
+    case -52: //BAT Error 2: Low Battery
+    case -61: //SD Error 1: Unable to Init SD Card
+    case -62: //SD Error 2: Unable to Open SD File
+    case -71: //Wifi Error 1: Unable to connect to wifi
+      break;
     default:
       return;
   }
-  while(1)
+  while(1)                      // Locks the cubesat on alert message
   {
-    alertMessage(-errorCode);
+    alertMessage(-errorCode);   // Sends an alert message with the error code
   }
 }
 
-void alertMessage(unsigned int msg){
-  if(msg/10 > 10)
+void alertMessage(unsigned int msg){  // Sends the error code on an alert message on the buzzer and LED. USE ONLY ON SETUP AS IT USES DELAY
+  if(msg/10 > 10)                     // Checks for invalid error code
     return;
 
-  int msgSensor = msg/10;
-  int msgError = msg%10;
+  int msgComp = msg/10;               // Gets the component number
+  int msgError = msg%10;              // Gets the error number
+  
+#ifdef SERIAL_DEBUG                   // if switch is defined
+  Serial.print(msgComp);              // prints error on serial
+  Serial.print("-> error ");
   Serial.println(msgError);
+#endif
 
-
- //failure tone//
+  //sad and mischievous failure tone//
   BuzzerTone(50); 
   delay(50);
   BuzzerTone(50);
   delay(50);
   BuzzerTone(50); 
 
+  //also turns led on//
+  LEDOn();
   delay(1000);
 
-  //sensor tone//
-  LEDOn();
-  for(int i = 0; i<msgSensor; i++){
+  //component tone: sends component number in beeps and blinks//
+  for(int i = 0; i<msgComp; i++){
+      LEDOff();
       BuzzerTone(100);
+      LEDOn();
       delay(500);
   }
   delay(2000);
   LEDOff();
 
-  //error tone//
+  //error tone: sends error number in beeps and blinks//
   for(int i = 0; i<msgError; i++){
+      LEDOff();
       BuzzerTone(100);
+      LEDOn();
       delay(500);
   }
+
+  //finishes execution with a delay of 5s on LED//
+  LEDOn();
   delay(5000);
-}
-
-
-//--------------------Calibration------------------//
-
-void HMCCalib(){
-  int i=0;
-  float xmax = -1000,xmin = 1000,ymax = -1000,ymin = 1000,zmax = -1000,zmin = 1000;
-  while(1)
-  {
-    ReadGY87(&GY87);
-    float x = GY87.Mag[0];
-    float y = GY87.Mag[1];
-    float z = GY87.Mag[2];
-    
-    if(x > xmax)
-      xmax = x;
-    if(y > ymax)
-      ymax = y;
-    if(z > zmax)
-      zmax = z;
-    if(x < xmin)
-      xmin = x;
-    if(y < ymin)
-      ymin = y;
-    if(z < zmin)
-      zmin = z;
-
-    i++;
-    if(i == 500)
-    {
-      Serial.print("Calib coef (xmax,xmin,ymax,ymin,zmax,zmin) = (");
-      Serial.print(xmax);
-      Serial.print(",");
-      Serial.print(xmin);
-      Serial.print(",");
-      Serial.print(ymax);
-      Serial.print(",");
-      Serial.print(ymin);
-      Serial.print(",");
-      Serial.print(zmax);
-      Serial.print(",");
-      Serial.print(zmin);
-      Serial.println(")");
-      i = 0;
-    }
-    delay(10);
-  }
+  LEDOff();
 }

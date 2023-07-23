@@ -66,51 +66,71 @@ struct
 }
 BMPCalCoef;                           // Stores calibration coeficients
 
-int SetGY87() {                       // Initializes all the sensors in the board
+int SetGY87(bool isReset) {        // Initializes all the sensors in the board
+  if(isReset){
+    Wire.end();
+  }
+
   Wire.begin();                       // Initialize I2C comunication on default Heltec LoRa Pins
+  Wire.setClock(400000);              // Speeds up I2C (also makes it work better for some reason? ~J)
   Wire.setTimeout(3);                 // Sets I2C timeout to prevent freezing
   
   //---- MPU 6050 Startup ----//
-  
+
   Wire.beginTransmission(MPU);       // Start communication with MPU6050 adress in I2C Buss
   Wire.write(0x6B);                  // Talk to the register 6B
-  Wire.write(0x40);                  // Make reset - place a 0x40 into the 6B register
+  Wire.write(0x80);                  // Make reset - place a 0x80 into the 6B register
   if(Wire.endTransmission(true)){    // End the transmission
     return -11;                      // Returns Error if module does not confirm receiving
+  }    
+  vTaskDelay(100);
+
+  Wire.beginTransmission(MPU);  
+  Wire.write(0x68);                  // Talk to the register 68
+  Wire.write(0x07);                  // Reset Sensors - place a 0x07 into the 68 register
+  if(Wire.endTransmission(true)){    // End the transmission
+    return -12;                      // Returns Error if module does not confirm receiving
+  }  
+  vTaskDelay(100);      
+  
+  Wire.beginTransmission(MPU);  
+  Wire.write(0x6B);                  // Talk to the register 6B
+  Wire.write(0x00);                  // Stops Sleep Mode - place a 0x80 into the 6B register
+  if(Wire.endTransmission(true)){    // End the transmission
+    return -13;                      // Returns Error if module does not confirm receiving
   }        
-  delay(100);
   
   // Configure Accelerometer Sensitivity - Full Scale Range (default is +/- 2g)
   Wire.beginTransmission(MPU);
   Wire.write(0x1C);                  //Talk to the ACCEL_CONFIG register (1C hex)
   Wire.write(0x10);                  //Set the register bits as 00010000 (+/- 8g full scale range)
   if(Wire.endTransmission(true)){
-    return -12;                      // Returns Error if module does not confirm receiving
+    return -14;                      // Returns Error if module does not confirm receiving
   }     
-  delay(5);
+  vTaskDelay(5);
   
   // Configure Gyro Sensitivity - Full Scale Range (default +/- 250deg/s)
   Wire.beginTransmission(MPU);
   Wire.write(0x1B);                   // Talk to the GYRO_CONFIG register (1B hex)
   Wire.write(0x10);                   // Set the register bits as 00010000 (1000deg/s full scale)
   if(Wire.endTransmission(true)){
-    return -13;                       // Returns Error if module does not confirm receiving
+    return -15;                       // Returns Error if module does not confirm receiving
   } 
-  delay(5);
+  vTaskDelay(5);
   //Pass-trough mode to access QMC5883L
   Wire.beginTransmission(MPU);
   Wire.write(0x37);
   Wire.write(0x02);
   if(Wire.endTransmission(true)){
-    return -14;                      // Returns Error if module does not confirm receiving
+    return -16;                      // Returns Error if module does not confirm receiving
   } 
   Wire.beginTransmission(MPU);
   Wire.write(0x6A);
   Wire.write(0x00);
   if(Wire.endTransmission(true)){
-    return -15;                      // Returns Error if module does not confirm receiving
+    return -17;                      // Returns Error if module does not confirm receiving
   } 
-  delay(5);
+  vTaskDelay(5);
 
   // === QMC5883L === //
   //Reset
@@ -121,7 +141,7 @@ int SetGY87() {                       // Initializes all the sensors in the boar
   {
     return -21;                     // Returns Error if module does not confirm receiving
   }
-  delay(5);
+  vTaskDelay(5);
   //Define Set/Reset period
   Wire.beginTransmission(QMC);
   Wire.write(0x0B);                 // Writes to register 0x0B
@@ -130,7 +150,7 @@ int SetGY87() {                       // Initializes all the sensors in the boar
   {
     return -22;                     // Returns Error if module does not confirm receiving
   }
-  delay(5);
+  vTaskDelay(5);
   //Sets Config
   Wire.beginTransmission(QMC);
   Wire.write(0x09);                 // Writes to register 0x09
@@ -147,7 +167,7 @@ int SetGY87() {                       // Initializes all the sensors in the boar
   if(Wire.endTransmission(true)){
     return -31;
   }      // End the transmission
-  delay(5);
+  vTaskDelay(5);
   Wire.beginTransmission(BMP);      // Checks Chip Id
   Wire.write(0xD0);                 // reads from register 0x09
   Wire.endTransmission(false);
@@ -158,7 +178,7 @@ int SetGY87() {                       // Initializes all the sensors in the boar
   }
 
   getCalCoef();                     // Gets calibration coeficients stored in the chip
-  delay(20);
+  vTaskDelay(20);
   return 0;
 }
 
@@ -172,9 +192,9 @@ void ReadGY87(DataGY87 *GY87) {     // Reads all GY-87 Sensors
   Wire.requestFrom(MPU, 6, true);   // Read 6 registers total, each axis value is stored in 2 registers
   
   //For a range of +-8g, we need to divide the raw values by 16384 / 4, according to the datasheet
-  GY87->Acc[0] = (int16_t (Wire.read() << 8 | Wire.read())) / 16384.0 * 4; // X-axis value
-  GY87->Acc[1] = (int16_t (Wire.read() << 8 | Wire.read())) / 16384.0 * 4; // Y-axis value
-  GY87->Acc[2]  = (int16_t (Wire.read() << 8 | Wire.read())) / 16384.0 * 4; // Z-axis value
+  GY87->Acc[0] = (int16_t (Wire.read() << 8 | Wire.read()) - AX_OFFSET) / 16384.0 * 4 * AX_SCALE; // X-axis value
+  GY87->Acc[1] = (int16_t (Wire.read() << 8 | Wire.read()) - AY_OFFSET) / 16384.0 * 4 * AY_SCALE; // Y-axis value
+  GY87->Acc[2] = (int16_t (Wire.read() << 8 | Wire.read()) - Az_OFFSET) / 16384.0 * 4 * AZ_SCALE; // Z-axis value
 
   // === Read gyroscope data === //
   
@@ -184,9 +204,9 @@ void ReadGY87(DataGY87 *GY87) {     // Reads all GY-87 Sensors
   Wire.requestFrom(MPU, 6, true);   // Read 6 registers total, each axis value is stored in 2 registers
   
   // For a 1000deg/s range we have to divide first the raw value by 131.0 * 4, according to the datasheet
-  GY87->Gyro[0] = (int16_t (Wire.read() << 8 | Wire.read())) / 131.0 * 4; 
-  GY87->Gyro[1] = (int16_t (Wire.read() << 8 | Wire.read())) / 131.0 * 4;
-  GY87->Gyro[2] = (int16_t (Wire.read() << 8 | Wire.read())) / 131.0 * 4;
+  GY87->Gyro[0] = (int16_t (Wire.read() << 8 | Wire.read()) - GX_OFFSET) / 131.0 * 4 * GX_SCALE; 
+  GY87->Gyro[1] = (int16_t (Wire.read() << 8 | Wire.read()) - GY_OFFSET) / 131.0 * 4 * GY_SCALE;
+  GY87->Gyro[2] = (int16_t (Wire.read() << 8 | Wire.read()) - GZ_OFFSET) / 131.0 * 4 * GZ_SCALE;
 
   // === Read Magnetometer data === //
   
@@ -233,6 +253,9 @@ void ReadGY87(DataGY87 *GY87) {     // Reads all GY-87 Sensors
   rawPres <<= 8;
   rawPres |= Wire.read();                //19-bits
   rawPres >>= (8 - Res_coef);            // 8 - (0 low, 1 std, 2 high, 3 UH)
+
+  GY87->tf = millis();                     //Gets measurement final time
+  
   GY87->Pres = processPres(rawPres, B5); //Converts Raw data to temperature through algebraic magic
 }
 

@@ -12,13 +12,20 @@
 #define TEAM 41
 
 //Delay for task functions in RTOS ticks (1 tick = 1ms if normal RTOS)
-#define GY_DELAY 5            //Note: those delays wont change sensor aquisition frequency, 
+#define GY_DELAY 0            //Note: those delays wont change sensor aquisition frequency, 
 #define GG_DELAY 10000        //only the frequency at which they will be read
-#define GPS_DELAY 100         //i.e. the gps will still operate at 1Hz even if GPS delay is 
+#define GPS_DELAY 500         //i.e. the gps will still operate at 1Hz even if GPS delay is 
 #define BAT_DELAY 10000       //set to 100ms, which corresponds to a reading 10Hz frequency.
 #define SD_DELAY 10
 #define LORA_DELAY 5000
 #define WIFI_DELAY 10000
+
+//Files
+#define GY87_FILE 0
+#define GPS_FILE 1
+#define GEIGER_FILE 2
+#define BATTERY_FILE 3
+#define LOG_FILE 4
 
 //Watchdog Timeout in seconds
 #define WDT_TIMEOUT 15
@@ -34,7 +41,7 @@ const char* serverName = "http://192.168.0.1:8080/";  // Server url = "http://ip
 
 //Debug
 #define SERIAL_DEBUG      //Activates Serial Debug
-//#define SERIAL_DEBUG_SD // Prints SD output
+//#define SERIAL_DEBUG_SD   // Prints SD output
 #define UNSAFE_BOOT       //Runs main code even if errors are detected
 
 //Comms & data
@@ -62,17 +69,19 @@ struct DataGY87{
   float Mag[3]  = {0,0,0};    // X, Y, Z; magnetic field in milliGauss
   float Pres = 0;             // Pressure in Pascal
   float Temp = 0;             // Temperature in Celsius
+  unsigned long tf = 0;       // Final time of measurement for barometer. tf-31 for acc gyro and mag
 };
 
 struct DataGPS{
   bool Valid[2] = {0,0};      // Pos and Time. True if they are valid
   double Pos[3]   = {0,0,0};  // Latitude (deg), Longitude (deg), Altitude (m);
   uint8_t Time[3] = {0,0,0};  // Second, Minute, Hour, universal time stamp (+0 fuse)
+  unsigned long tf = 0;       // Final time of measurement
 };
 
 struct DataGeiger{
   unsigned int counts = 0;    // number of counts starting from last tf to the end of this tf
-  unsigned long tf = 0;       //last measure final Time
+  unsigned long tf = 0;       // Final time of measurement
 };
 
 //-------------------//
@@ -99,8 +108,25 @@ const float MagZCalib2 = MagAvgDelta/((303.34 + 87.59)/2);
 
 //---------Accelerometer Calib Coef---------//
 
+// Accelerometer offset:
+const int16_t AX_OFFSET = 0.08 * 16384.0 / 4;       // Use these values to calibrate the accelerometer. The sensor should output 1.0g if held level. 
+const int16_t AY_OFFSET = 0.02 * 16384.0 / 4;       // These values are unlikely to be zero.
+const int16_t Az_OFFSET = 0.03 * 16384.0 / 4;
+
+// Output scale: 
+const float AX_SCALE = 1.00;     // Multiplier for accelerometer outputs. Use this to calibrate the sensor. If unknown set to 1.
+const float AY_SCALE = 1.00;
+const float AZ_SCALE = 1.00;
 
 //-----------Gyrometer Calib Coef-----------//
+// Accelerometer offset:
+const int16_t GX_OFFSET = -11.4 * 131.0 / 4;       // Use these values to calibrate the accelerometer. The sensor should output 1.0g if held level. 
+const int16_t GY_OFFSET = 5.45 * 131.0 / 4;       // These values are unlikely to be zero.
+const int16_t GZ_OFFSET = -1.4 * 131.0 / 4;
 
+// Output scale: 
+const float GX_SCALE = 1.0;     // Multiplier for accelerometer outputs. Use this to calibrate the sensor. If unknown set to 1.
+const float GY_SCALE = 1.0;
+const float GZ_SCALE = 1.0;
 
 #endif

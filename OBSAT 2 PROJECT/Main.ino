@@ -7,15 +7,20 @@
 //Globals
 static DataGPS GPS = {};                //Stores GPS Data as defined in Curie Header
 static SemaphoreHandle_t GPSMutex;      //Mutex for GPS Data
+static bool isGY87Ready = false;        //Flag for SD Routine
+static bool GYNeedsReset = false;       //Flag for GY reset 
 
 static DataGeiger Geiger = {};          //Stores GY-87 Data as defined in Curie Header
 static SemaphoreHandle_t GGMutex;       //Mutex for Geiger Data
+static bool isGeigerReady = false;
 
 static DataGY87 GY87 = {};              //Stores GY-87 Data as defined in Curie Header
 static SemaphoreHandle_t GYMutex;       //Mutex for GY-87 Data
+static bool isGPSReady = false;
 
 static int Battery = 0;                 //Stores Battery power from 0 to 100%
-                                        //No need for mutex as using 1 cycle operation variable (int)
+static SemaphoreHandle_t BatMutex;       //Mutex for Bat Data
+static bool isBatteryReady = false;
 
 //------ReadingTasks-------//
 
@@ -27,13 +32,23 @@ void readMultiSensor(void *param)       //Reads Acelerometer, Gyrometes, Baromet
   DataGY87 localGY;                     //Creates a local copy of dataGY to avoid using global variable for long
   while(1){                             //Infinite task loop
     esp_task_wdt_reset();                       //Resets the watchdog timer Note: EVERY task with wdt_add must do this or the cpu will be reset
-    ReadGY87(&localGY);                         //Reads GY87 at local GY87 struct
-    CorrectMag(&localGY);                       //Corrects Magnetometer according to calibration constants set in Curie.h
-    if(xSemaphoreTake(GYMutex, 0) == pdTRUE){   //try to take the mutex (GYMutex) if it is available in the next 0 ticks 
-      GY87 = localGY;                           //if mutex is taken, save local GY-87 to GY-87 global
-      xSemaphoreGive(GYMutex);                  //gives back the mutex
-    }                                           //Note: the task shouldn't wait to take the mutex as the sensor data will update
+    if(GYNeedsReset){
+      SetGY87(true);
+      GYNeedsReset = false;
+      LEDOff();
+    }
+    else{
+      ReadGY87(&localGY);                         //Reads GY87 at local GY87 struct
+      CorrectMag(&localGY);                       //Corrects Magnetometer according to calibration constants set in Curie.h
+      if(xSemaphoreTake(GYMutex, 0) == pdTRUE){   //try to take the mutex (GYMutex) if it is available in the next 0 ticks 
+        GY87 = localGY;                           //if mutex is taken, save local GY-87 to GY-87 global
+        isGY87Ready = true;                       //Sets flag for SD Routine
+        xSemaphoreGive(GYMutex);                  //gives back the mutex
+      }                                           //Note: the task shouldn't wait to take the mutex as the sensor data will update
+    }
+    #if GY_DELAY > 0                            //If no delay
     vTaskDelay(GY_DELAY / portTICK_PERIOD_MS);  //Waits for the period defined in curie header
+    #endif
   }
 }
 
@@ -43,11 +58,12 @@ void readGPS(void *param)               //Reads GPS position and Time
   DataGPS localGPS;                     //Same as readMultiSensor function but with DataGPS type instead
   while(1){                             //Same as readMultiSensor function
     esp_task_wdt_reset();                       //Same as readMultiSensor function
-    ReadGPS(&localGPS);                         //Same as readMultiSensor function but with DataGPS type instead
-    if(xSemaphoreTake(GPSMutex, 0) == pdTRUE){  //Same as readMultiSensor function but with GPS mutex instead
-      GPS = localGPS;                           //Same as readMultiSensor function but with DataGPS variable instead 
-      xSemaphoreGive(GPSMutex);                 //Same as readMultiSensor function but with GPS mutex instead
-    }
+    if(ReadGPS(&localGPS))                        //Same as readMultiSensor function but with DataGPS type instead
+      if(xSemaphoreTake(GPSMutex, 0) == pdTRUE){  //Same as readMultiSensor function but with GPS mutex instead
+        GPS = localGPS;                           //Same as readMultiSensor function but with DataGPS variable instead 
+        isGPSReady = true;
+        xSemaphoreGive(GPSMutex);                 //Same as readMultiSensor function but with GPS mutex instead
+      }
     vTaskDelay(GPS_DELAY / portTICK_PERIOD_MS); //Waits for the period defined in curie header
   }
 }
@@ -61,6 +77,7 @@ void readGGR(void *param)               //Reads Geiger Counts from previous Tf t
     ReadGeiger(&localGeiger);                   //Same as readMultiSensor function but with DataGeiger type instead
     if(xSemaphoreTake(GGMutex, portMAX_DELAY) == pdTRUE){   //Geiger can wait as the counts are only dependent on the final time
       Geiger = localGeiger;                     //Same as readMultiSensor function but with DataGeiger type instead
+      isGeigerReady = true;
       xSemaphoreGive(GGMutex);                  //Same as readMultiSensor but with Geiger mutex instead
     }
     vTaskDelay(GG_DELAY / portTICK_PERIOD_MS);  //Waits for the period defined in curie header
@@ -70,9 +87,25 @@ void readGGR(void *param)               //Reads Geiger Counts from previous Tf t
 void readBattery(void *param)           //Reads Battery percentage from 0 to 100%
 {
   esp_task_wdt_add(NULL);               //Same as readMultiSensor function
+  int measures[8];
+  int measuresMean;
+  for(int i = 0; i<8; i++){
+    measures[i] = ReadBattery();
+    measuresMean += measures[i]/8;
+    vTaskDelay(2 / portTICK_PERIOD_MS);  
+  }
+  uint8_t index = 0;
   while(1){                             //Same as readMultiSensor function
     esp_task_wdt_reset();                         //Same as readMultiSensor function
-    Battery = ReadBattery();                      //No need for mutex as it is a single cycle operation
+    measuresMean -= measures[index]/8;
+    if(xSemaphoreTake(BatMutex, portMAX_DELAY) == pdTRUE){  // -
+          measures[index] = ReadBattery(); 
+          measuresMean += measures[index]/8;   
+          Battery = measuresMean;                   
+          isBatteryReady = true;
+          xSemaphoreGive(BatMutex); 
+    }
+    index = (index == 7) ? 0 : index++;
     vTaskDelay(BAT_DELAY / portTICK_PERIOD_MS);   //Waits for the period defined in curie header
   }
 }
@@ -144,29 +177,89 @@ void sendHttp(void *param)              //Sends Wifi Radio Transmission via http
 void writeSD(void *param)               //Sends Wifi Radio Transmission via http requisition
 {
   DataGY87 localGY;                     //All here is the same as sendLoRa
+  float lastAcc[3][3] = {0};            //Copies for MPU freezing checking
+  float lastGyro[3][3] = {0};
+  uint8_t swt = 0;                      //For alternating the arrays
+  bool isFrozen[3] = {0};
+  
   DataGPS localGPS;                     // -
   DataGeiger localGeiger;               // -
+  int localBat;
   esp_task_wdt_add(NULL);               // -
   while(1){                                                 // -
     esp_task_wdt_reset();                                   // -
-    if(xSemaphoreTake(GYMutex, portMAX_DELAY) == pdTRUE){   // -
-        localGY = GY87;                                     // -
-        xSemaphoreGive(GYMutex);                            // -
-    }                                                       // -
-    if(xSemaphoreTake(GPSMutex, portMAX_DELAY) == pdTRUE){  // -
-        localGPS = GPS;                                     // -
-        xSemaphoreGive(GPSMutex);                           // -
-    }                                                       // -
-    if(xSemaphoreTake(GGMutex, portMAX_DELAY) == pdTRUE){   // -
-        localGeiger = Geiger;                               // -
-        xSemaphoreGive(GGMutex);                            // -
-    }                                                       // -
-    String dataToStore;                                     //Same purpose, different name
-    CreateSDMessage(localGY, localGPS, localGeiger, Battery, &dataToStore); //Same thing but different format for SD
+    if(isGY87Ready)                                           // If Flag is set
+      if(xSemaphoreTake(GYMutex, portMAX_DELAY) == pdTRUE){   // -
+          localGY = GY87;                                     // -
+          isGY87Ready = false;                                // unsets Flag
+          xSemaphoreGive(GYMutex);                            // -
+          WriteSD(GYMessage(localGY), GY87_FILE);
+
+          for(int i =0; i<3; i++)
+            isFrozen[i] = true;
+     
+          for(int j =0; j<3; j++)
+            for(int i =0; i<3; i++)
+              if(lastAcc[i][j] != localGY.Acc[j]) {
+                isFrozen[j] = false;
+                break;
+              }
+          
+          if(isFrozen[0] || isFrozen[1] || isFrozen[2]) {
+            GYNeedsReset = true;
+            WriteSD(String(millis())+": MPU Acc Froze", LOG_FILE);
+            LEDOn();
+          }
+          swt = (swt == 2) ? 0 : swt++;
+          for(int i = 0; i<3; i++)
+            lastAcc[swt][i] = localGY.Acc[i];
+
+          for(int i =0; i<3; i++)
+            isFrozen[i] = true;
+            
+          for(int j =0; j<3; j++)
+            for(int i =0; i<3; i++)
+              if(lastGyro[i][j] != localGY.Gyro[j]) {
+                isFrozen[j] = false;
+                break;
+              }
+
+          if(isFrozen[0] || isFrozen[1] || isFrozen[2]){
+            GYNeedsReset = true;
+            WriteSD(String(millis())+": MPU Gyro Froze", LOG_FILE);
+            LEDOn();
+          }
+          for(int i = 0; i<3; i++)
+            lastGyro[swt][i] = localGY.Gyro[i];
+      }                                                       // -
+    if(isGPSReady)           
+      if(xSemaphoreTake(GPSMutex, portMAX_DELAY) == pdTRUE){  // -
+          localGPS = GPS;                                     // -
+          xSemaphoreGive(GPSMutex);                           // -
+          isGPSReady = false;
+          WriteSD(GPSMessage(localGPS), GPS_FILE);
+      }                                                       // -
+    if(isGeigerReady)       
+      if(xSemaphoreTake(GGMutex, portMAX_DELAY) == pdTRUE){   // -
+          localGeiger = Geiger;                               // -
+          xSemaphoreGive(GGMutex);                            // -
+          isGeigerReady = false;
+          WriteSD(GeigerMessage(localGeiger), GEIGER_FILE);
+      }                                                       // -
+    if(isBatteryReady)
+      if(xSemaphoreTake(BatMutex, portMAX_DELAY) == pdTRUE){  // -
+          localBat = Battery;
+          isBatteryReady = false;
+          xSemaphoreGive(BatMutex); 
+          WriteSD(BatMessage(localBat), BATTERY_FILE);
+      }
+
     #ifdef SERIAL_DEBUG_SD                                  //If the switch is defined
-      Serial.println(dataToStore);                          //Prints each saved data to serial
+      String message;
+      CreateSDMessage(localGY, localGPS, localGeiger, Battery, &message);
+      Serial.println(message);
     #endif
-    WriteSD(dataToStore);                                   //Saves data in SD
+
     vTaskDelay(SD_DELAY / portTICK_PERIOD_MS);              //Waits for the period defined in curie header
   }
 }
@@ -193,13 +286,13 @@ void setup() {
 //------Start Sensors-------//
   
 #ifdef ENABLE_GY                //If the switch is defined
-    errCode[0] = SetGY87();     //Start GY multisensor. Saves the return code
+    errCode[0] = SetGY87(false);//Start GY multisensor. Saves the return code. false because sensor wasn't initiated yet
 #else
     errCode[0] = 0;             //No errors from something that we won't even start :D
 #endif 
   
 #ifdef ENABLE_GPS               //Similar to errCode[0]
-  errCode[1] = SetGPS();        //Start GPS. Saves the return code
+  errCode[1] = SetGPS(false);   //Start GPS. Saves the return code
 #else
   errCode[1] = 0;
 #endif 
@@ -232,28 +325,41 @@ void setup() {
   errCode[6] = 0;
 #endif
 
+//------Writes Log-----------//
+ WriteSD(String(millis())+": Poweron", LOG_FILE);
+
+ for(int i=0; i<7; i++)
+  if(errCode[i])
+     WriteSD(String(millis())+": Error "+String(errCode[i]), LOG_FILE);
+
 //------Checks Errors--------//
 
-  for(int i = 0; i<7; i++)      //Loops through each return Value
-    if(errCode[i])              //If the return value is not 0 (which means it is an error).
-    {
-      #ifdef SERIAL_DEBUG                     //If the switch is defined
-      Serial.print("Detected Error Code: ");  //Prints Error Code to serial
-      Serial.println(errCode[i]);
-      #endif
-      #ifndef UNSAFE_BOOT                     //If the switch is NOT defined
-        errorHandler(errCode[i]);             //Calls the error handler, which will deal with each error individually
-      #endif
-    }
+#ifndef UNSAFE_BOOT                    //If the switch is NOT defined
+  initErrorHandler(errCode, 7, true);           //Calls the error handler, which will deal with each error individually, blocking the code
+#else
+  initErrorHandler(errCode, 7, false);           //Calls the error handler, which will deal with each error individually
+#endif
 
 //----Semaphore Creation----//
   GYMutex = xSemaphoreCreateMutex();          //Mutex are used to avoid two tasks using the same resource at same time
   GPSMutex = xSemaphoreCreateMutex();         //what would cause lots of unwanted behaviours. There is one for each
-  GGMutex = xSemaphoreCreateMutex();          //shared resource except the battery, as it's update is one cycle
+  GGMutex = xSemaphoreCreateMutex();          //shared resource
+  BatMutex = xSemaphoreCreateMutex();
 
 //------Creates Watchdog----//
 
   esp_task_wdt_init(WDT_TIMEOUT, true);         //This watchdog is a timer that, if not reset by EACH TASK in it, will reset the CPU every WDT_Timeout seconds, defined in Curie.h
+
+//------Sucess Sound------//
+  #ifndef SILENCE                             //If the switch is defined
+  BuzzerTone(100);                            //Outputs a classy victory sound!
+  vTaskDelay(200 / portTICK_PERIOD_MS);
+  BuzzerTone(100);
+  vTaskDelay(100 / portTICK_PERIOD_MS);
+  BuzzerTone(50);
+  vTaskDelay(50 / portTICK_PERIOD_MS);
+  BuzzerTone(600);
+  #endif
   
 //------Task Creation------//
 
@@ -322,7 +428,7 @@ void setup() {
 #ifdef ENABLE_SD                              //If the switch is defined
   xTaskCreatePinnedToCore(writeSD,            //Function
                         "writeSD",            //Stack Name
-                        3200,                 //Stack Size
+                        5500,                 //Stack Size
                         NULL,                 //Parameter to Pass
                         1,                    //Task Priority
                         NULL,                 //Task Handle
@@ -341,17 +447,6 @@ void setup() {
                         1                     //Core to Run
   );
 #endif
-  
-//------Sucess Sound------//
-  #ifndef SILENCE                             //If the switch is defined
-  BuzzerTone(100);                            //Outputs a classy victory sound!
-  delay(200);
-  BuzzerTone(100);
-  delay(100);
-  BuzzerTone(50);
-  delay(50);
-  BuzzerTone(600);
-  #endif
   
 //------Turns Leds Off------//
   LEDOff();                                   //Turns off LED to futher signalize everything went okay

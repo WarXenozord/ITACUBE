@@ -4,7 +4,7 @@
 #include <ArduinoJson.h>                    // Lib for formating in Json
 #include "Curie.h"
 
-long long msgId = 0;                        // main Id used in SD mensages
+long long GYId = 0;                        // main Id used in SD mensages
 long long lMsgId = 0;                       // main Id used in lora mensages
 
 void CreateHttpMessage(struct DataGY87 GY87, struct DataGPS GPS, struct DataGeiger Geiger, int Battery, String *query){ //create http request as defined in OBSAT Requirements
@@ -35,6 +35,55 @@ void CreateHttpMessage(struct DataGY87 GY87, struct DataGPS GPS, struct DataGeig
   serializeJson(message, *query);                                       // 76 bytes used of 90 available per OBSAT requirements
 }
 
+const String GYMessage(const struct DataGY87 GY87)
+{
+  StaticJsonDocument<300> message;        // Json wih 200 bytes capacity
+  message["id"] = GYId;
+  GYId++;
+  message["ms"] = GY87.tf;
+  message["temp"] = GY87.Temp; 
+  message["pres"] = GY87.Pres;
+  message["ms2"] = GY87.tf - 31;
+  JsonArray giroscopio = message.createNestedArray("giro"); 
+  JsonArray acelerometro = message.createNestedArray("acel"); 
+  JsonArray magnetometro = message.createNestedArray("mag");
+  for(int i = 0; i < 3; i++){
+    acelerometro[i] = GY87.Acc[i];
+    giroscopio[i] = GY87.Gyro[i];
+    magnetometro[i] = GY87.Mag[i];
+  }
+  String msg;
+  serializeJson(message, msg);
+  return msg;
+}
+
+const String GPSMessage(const struct DataGPS GPS)
+{
+  StaticJsonDocument<200> message;        // Json wih 200 bytes capacity
+  message["ms"] = GPS.tf;
+  JsonObject gpsArray = message.createNestedObject("gps");
+  JsonArray P = gpsArray.createNestedArray("P");
+  for(int i = 0; i < 3; i++){
+    P[i] = GPS.Pos[i];
+  }
+  gpsArray["T"] =  GPS.Time[0] + GPS.Time[1] * 60 + GPS.Time[2] * 3600; //Converts time to seconds since the day began
+  String msg;
+  serializeJson(message, msg);
+  return msg;
+}
+
+const String GeigerMessage(const struct DataGeiger GG)
+{
+  return String(GG.counts) + "," + String(GG.tf);
+}
+
+const String BatMessage(const int Bat)
+{
+  return String(Bat)+ "," + String(millis());
+}
+
+// Deprecated as new storage type stores all data in separated files
+#ifdef SERIAL_DEBUG_SD                                  //If the switch is defined
 void CreateSDMessage(struct DataGY87 GY87, struct DataGPS GPS, struct DataGeiger Geiger, int Battery, String *query){
   *query = "";                            // Clears any previous message
   StaticJsonDocument<430> message;        // Json wih 430 bytes capacity
@@ -67,6 +116,7 @@ void CreateSDMessage(struct DataGY87 GY87, struct DataGPS GPS, struct DataGeiger
 
   serializeJson(message, *query);         // Creates the Json without newlines
 }
+#endif
 
 void CreateLoRaMessage(struct DataGY87 GY87, struct DataGPS GPS, struct DataGeiger Geiger, int Battery, String *query){
   *query = "";                            // Clears any previous message

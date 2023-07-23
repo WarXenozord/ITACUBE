@@ -32,6 +32,8 @@ void OnTxDone( void );                              //Called after finished tran
 void OnTxTimeout( void );                           //Called for failed transmission
 
 int SetLoRa(){
+  Mcu.begin();                                      // Starts radio call
+  
   RadioEvents.TxDone = OnTxDone;                    // Sets Tx Done task
   RadioEvents.TxTimeout = OnTxTimeout;              // Sets Tx Timeout task
     
@@ -41,7 +43,7 @@ int SetLoRa(){
                                    LORA_SPREADING_FACTOR, LORA_CODINGRATE,
                                    LORA_PREAMBLE_LENGTH, LORA_FIX_LENGTH_PAYLOAD_ON,
                                    true, 0, 0, LORA_IQ_INVERSION_ON, 3000 );        
-  delay(100);
+  vTaskDelay(100);
   return 0;
 }
 

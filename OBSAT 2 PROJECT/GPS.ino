@@ -19,9 +19,10 @@ const uint8_t ubx_cfg_conf[] = { 0xB5, 0x62, 0x05, 0x01, 0x02, 0x00, 0x06, 0x24,
 
 TinyGPSPlus gps;              //GPS Class from TinyGPSPlus
 
-int SetGPS() {                                              //Starts the GPS
-  Serial1.begin(GPS_Serial_Baud, SERIAL_8N1, RXD1, TXD1);   //Begins Serial at 9600, type 8N1 and RX & TX pins
-  
+int SetGPS(bool isReset) {                                              //Starts the GPS
+  if(!isReset){
+    Serial1.begin(GPS_Serial_Baud, SERIAL_8N1, RXD1, TXD1); //Begins Serial at 9600, type 8N1 and RX & TX pins
+  }
   Serial1.println("$PUBX,40,GLL,0,0,0,0,0,0*5C");           //shuts up all gps NMEA Sentence in order to 
   Serial1.println("$PUBX,40,GSA,0,0,0,0,0,0*4E");           //config and get the confirmation code after.
   Serial1.println("$PUBX,40,ZDA,0,0,0,0,0,0*44");
@@ -75,6 +76,7 @@ bool ReadGPS(DataGPS *GPS) {                                //Reads Data from GP
         GPS->Time[1] = gps.time.minute();                   //atribution of GPS UTC time minutes
         GPS->Time[2] = gps.time.hour();                     //atribution of GPS UTC time hours
       }
+      GPS->tf = millis();
     }
   return true;                                              
 }

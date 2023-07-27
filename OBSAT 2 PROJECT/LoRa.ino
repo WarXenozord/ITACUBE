@@ -62,9 +62,10 @@ void OnTxDone( void )
 	lora_idle = true;     //Marks Radio as Free
 }
 
-void OnTxTimeout( void )
+void OnTxTimeout( void )  //Does the same as OnTxDone but sets an error
 {
   Radio.Sleep( );
   lora_idle = true;
-  // (reminder: do throw a runtime error handler here later ~J)
+  txTimeout = true;
+  LEDOn();
 }

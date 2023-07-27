@@ -12,16 +12,19 @@ static bool GYNeedsReset = false;       //Flag for GY reset
 
 static DataGeiger Geiger = {};          //Stores GY-87 Data as defined in Curie Header
 static SemaphoreHandle_t GGMutex;       //Mutex for Geiger Data
-static bool isGeigerReady = false;
+static bool isGeigerReady = false;      //Flag for SD Routine
 
 static DataGY87 GY87 = {};              //Stores GY-87 Data as defined in Curie Header
 static SemaphoreHandle_t GYMutex;       //Mutex for GY-87 Data
-static bool isGPSReady = false;
+static bool isGPSReady = false;         //Flag for SD Routine
 
 static int Battery = 0;                 //Stores Battery power from 0 to 100%
-static SemaphoreHandle_t BatMutex;       //Mutex for Bat Data
-static bool isBatteryReady = false;
+static SemaphoreHandle_t BatMutex;      //Mutex for Bat Data
+static bool isBatteryReady = false;     //Flag for SD Routine
 
+bool txTimeout = false;                 //Flag for tx timeout error 
+bool wifiNotConnected = false;          //Flag for wifi not connected error
+bool httpFailed = false;                //Flag for http non good status
 //------ReadingTasks-------//
 
 //Those tasks read the sensors data periodically and store them in the global variables above
@@ -146,11 +149,10 @@ void sendLoRa(void *param)              //Sends LoRa Radio Transmission
 void sendHttp(void *param)              //Sends Wifi Radio Transmission via http requisition
 {
   DataGY87 localGY;                     //All here is the same as sendLoRa
-  DataGPS localGPS;                     // -
-  DataGeiger localGeiger;               // -
-  esp_task_wdt_add(NULL);               // -
+  DataGPS localGPS;                     // No watchdog as this tasks takes too long
+  DataGeiger localGeiger;               // (4 min according to obsat specs) but even if cpu 
+                                        // freezes here, other tasks will trigger the watchdog
   while(1){                                                 // -
-    esp_task_wdt_reset();                                   // -
     if(xSemaphoreTake(GYMutex, portMAX_DELAY) == pdTRUE){   // -
         localGY = GY87;                                     // -
         xSemaphoreGive(GYMutex);                            // -
@@ -166,7 +168,6 @@ void sendHttp(void *param)              //Sends Wifi Radio Transmission via http
     String query;                                           //Same purpose, different name
     CreateHttpMessage(localGY, localGPS, localGeiger, Battery, &query); //Same thing but different format for wifi
     
-    esp_task_wdt_reset();                                   //A second reset was needed as the function takes too long waiting
                                                             //Note: if this function is extended to OBSAT 4min, well need a workaround
     SendHttpRequest(query);                                 //Sends the Query via http
     vTaskDelay(WIFI_DELAY / portTICK_PERIOD_MS);            //Waits for the period defined in curie header
@@ -177,7 +178,7 @@ void sendHttp(void *param)              //Sends Wifi Radio Transmission via http
 void writeSD(void *param)               //Sends Wifi Radio Transmission via http requisition
 {
   DataGY87 localGY;                     //All here is the same as sendLoRa
-  float lastAcc[3][3] = {0};            //Copies for MPU freezing checking
+  float lastAcc[3][3] = {0};            //Copies of last 3 measurements for MPU freezing checking
   float lastGyro[3][3] = {0};
   uint8_t swt = 0;                      //For alternating the arrays
   bool isFrozen[3] = {0};
@@ -195,10 +196,9 @@ void writeSD(void *param)               //Sends Wifi Radio Transmission via http
           xSemaphoreGive(GYMutex);                            // -
           WriteSD(GYMessage(localGY), GY87_FILE);
 
-          for(int i =0; i<3; i++)
-            isFrozen[i] = true;
-     
-          for(int j =0; j<3; j++)
+          for(int i =0; i<3; i++)                             // Compares Acc Measurements to the last 3 ones made
+            isFrozen[i] = true;                               // If all of them are equal to the current measurements
+          for(int j =0; j<3; j++)                             // In any of the 3 axis, then sets the reset flag for mpu
             for(int i =0; i<3; i++)
               if(lastAcc[i][j] != localGY.Acc[j]) {
                 isFrozen[j] = false;
@@ -210,15 +210,13 @@ void writeSD(void *param)               //Sends Wifi Radio Transmission via http
             WriteSD(String(millis())+": MPU Acc Froze", LOG_FILE);
             LEDOn();
           }
-          swt = (swt == 2) ? 0 : swt++;
           for(int i = 0; i<3; i++)
             lastAcc[swt][i] = localGY.Acc[i];
 
-          for(int i =0; i<3; i++)
+          for(int i =0; i<3; i++)                             // Same as above but with gyro
             isFrozen[i] = true;
-            
-          for(int j =0; j<3; j++)
-            for(int i =0; i<3; i++)
+          for(int j = 0; j<3; j++)
+            for(int i = 0; i<3; i++)
               if(lastGyro[i][j] != localGY.Gyro[j]) {
                 isFrozen[j] = false;
                 break;
@@ -231,6 +229,8 @@ void writeSD(void *param)               //Sends Wifi Radio Transmission via http
           }
           for(int i = 0; i<3; i++)
             lastGyro[swt][i] = localGY.Gyro[i];
+            
+          (swt == 2) ? swt=0 : swt++;
       }                                                       // -
     if(isGPSReady)           
       if(xSemaphoreTake(GPSMutex, portMAX_DELAY) == pdTRUE){  // -
@@ -259,6 +259,24 @@ void writeSD(void *param)               //Sends Wifi Radio Transmission via http
       CreateSDMessage(localGY, localGPS, localGeiger, Battery, &message);
       Serial.println(message);
     #endif
+
+    if(txTimeout){                      //Logs the error
+      WriteSD(String(millis())+": Tx could not transmit", LOG_FILE);
+      LEDOff();
+      txTimeout = false;
+    }
+
+    if(wifiNotConnected){               //Logs the error
+      WriteSD(String(millis())+": Wifi lost connexion", LOG_FILE);
+      LEDOff();
+      wifiNotConnected = false;
+    }
+    
+    if(httpFailed){                     //Logs the error
+      WriteSD(String(millis())+": http request failed", LOG_FILE);
+      LEDOff();
+      httpFailed = false;
+    }
 
     vTaskDelay(SD_DELAY / portTICK_PERIOD_MS);              //Waits for the period defined in curie header
   }

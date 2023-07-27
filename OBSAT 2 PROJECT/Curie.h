@@ -14,11 +14,11 @@
 //Delay for task functions in RTOS ticks (1 tick = 1ms if normal RTOS)
 #define GY_DELAY 0            //Note: those delays wont change sensor aquisition frequency, 
 #define GG_DELAY 10000        //only the frequency at which they will be read
-#define GPS_DELAY 500         //i.e. the gps will still operate at 1Hz even if GPS delay is 
+#define GPS_DELAY 500         //e.g. the gps will still operate at 1Hz even if GPS delay is 
 #define BAT_DELAY 10000       //set to 100ms, which corresponds to a reading 10Hz frequency.
 #define SD_DELAY 10
 #define LORA_DELAY 5000
-#define WIFI_DELAY 10000
+#define WIFI_DELAY 240000
 
 //Files
 #define GY87_FILE 0
@@ -40,9 +40,9 @@ const char* serverName = "http://192.168.0.1:8080/";  // Server url = "http://ip
 //----------------//
 
 //Debug
-#define SERIAL_DEBUG      //Activates Serial Debug
+//#define SERIAL_DEBUG      //Activates Serial Debug
 //#define SERIAL_DEBUG_SD   // Prints SD output
-#define UNSAFE_BOOT       //Runs main code even if errors are detected
+//#define UNSAFE_BOOT       //Runs main code even if errors are detected
 
 //Comms & data
 #define ENABLE_LORA       //Enables LoRa Comms
@@ -55,7 +55,7 @@ const char* serverName = "http://192.168.0.1:8080/";  // Server url = "http://ip
 #define ENABLE_GG         //Enables Geiger
 
 //Miscellaneous
-#define SILENCE;          //Stops sucess sound
+//#define SILENCE;          //Stops sucess sound
 
 
 //-------------------//

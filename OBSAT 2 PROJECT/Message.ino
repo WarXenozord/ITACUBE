@@ -4,7 +4,7 @@
 #include <ArduinoJson.h>                    // Lib for formating in Json
 #include "Curie.h"
 
-long long GYId = 0;                        // main Id used in SD mensages
+long long GYId = 0;                         // main Id used in SD mensages
 long long lMsgId = 0;                       // main Id used in lora mensages
 
 void CreateHttpMessage(struct DataGY87 GY87, struct DataGPS GPS, struct DataGeiger Geiger, int Battery, String *query){ //create http request as defined in OBSAT Requirements
@@ -38,13 +38,13 @@ void CreateHttpMessage(struct DataGY87 GY87, struct DataGPS GPS, struct DataGeig
 const String GYMessage(const struct DataGY87 GY87)
 {
   StaticJsonDocument<300> message;        // Json wih 200 bytes capacity
-  message["id"] = GYId;
+  message["id"] = GYId;                   // GY message unique ID
   GYId++;
-  message["ms"] = GY87.tf;
-  message["temp"] = GY87.Temp; 
-  message["pres"] = GY87.Pres;
-  message["ms2"] = GY87.tf - 31;
-  JsonArray giroscopio = message.createNestedArray("giro"); 
+  message["ms"] = GY87.tf;                // Time of barometer and temperature measurements
+  message["temp"] = GY87.Temp;            //temperature in celsius
+  message["pres"] = GY87.Pres;            //pressure in PA
+  message["ms2"] = GY87.tf - 31;          // Time of acelerometer, gyrometer and magnetometer measurements
+  JsonArray giroscopio = message.createNestedArray("giro"); //Acelerometer and magnetometer readings
   JsonArray acelerometro = message.createNestedArray("acel"); 
   JsonArray magnetometro = message.createNestedArray("mag");
   for(int i = 0; i < 3; i++){
@@ -53,36 +53,36 @@ const String GYMessage(const struct DataGY87 GY87)
     magnetometro[i] = GY87.Mag[i];
   }
   String msg;
-  serializeJson(message, msg);
+  serializeJson(message, msg);  //formats in json
   return msg;
 }
 
 const String GPSMessage(const struct DataGPS GPS)
 {
   StaticJsonDocument<200> message;        // Json wih 200 bytes capacity
-  message["ms"] = GPS.tf;
-  JsonObject gpsArray = message.createNestedObject("gps");
-  JsonArray P = gpsArray.createNestedArray("P");
+  message["ms"] = GPS.tf;                 // time of received measuremente
+  JsonObject gpsArray = message.createNestedObject("gps");  
+  JsonArray P = gpsArray.createNestedArray("P");  //Gps fix
   for(int i = 0; i < 3; i++){
     P[i] = GPS.Pos[i];
   }
-  gpsArray["T"] =  GPS.Time[0] + GPS.Time[1] * 60 + GPS.Time[2] * 3600; //Converts time to seconds since the day began
+  gpsArray["T"] =  GPS.Time[0] + GPS.Time[1] * 60 + GPS.Time[2] * 3600; //GPS RTC time. Converts time to seconds since the day began
   String msg;
   serializeJson(message, msg);
   return msg;
 }
 
-const String GeigerMessage(const struct DataGeiger GG)
+const String GeigerMessage(const struct DataGeiger GG) //Geiger measurement: counts + final time of measurement
 {
   return String(GG.counts) + "," + String(GG.tf);
 }
 
-const String BatMessage(const int Bat)
+const String BatMessage(const int Bat)  //Geiger measurement: battery % + final time of measurement
 {
   return String(Bat)+ "," + String(millis());
 }
 
-// Deprecated as new storage type stores all data in separated files
+// Used only on debug as storage type stores all data in separated files
 #ifdef SERIAL_DEBUG_SD                                  //If the switch is defined
 void CreateSDMessage(struct DataGY87 GY87, struct DataGPS GPS, struct DataGeiger Geiger, int Battery, String *query){
   *query = "";                            // Clears any previous message

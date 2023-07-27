@@ -67,7 +67,7 @@ struct
 BMPCalCoef;                           // Stores calibration coeficients
 
 int SetGY87(bool isReset) {        // Initializes all the sensors in the board
-  if(isReset){
+  if(isReset){                        //If it is a reset, we need to reset the I2C too
     Wire.end();
   }
 
@@ -92,6 +92,7 @@ int SetGY87(bool isReset) {        // Initializes all the sensors in the board
     return -12;                      // Returns Error if module does not confirm receiving
   }  
   vTaskDelay(100);      
+
   
   Wire.beginTransmission(MPU);  
   Wire.write(0x6B);                  // Talk to the register 6B
@@ -259,7 +260,7 @@ void ReadGY87(DataGY87 *GY87) {     // Reads all GY-87 Sensors
   GY87->Pres = processPres(rawPres, B5); //Converts Raw data to temperature through algebraic magic
 }
 
-void getCalCoef() //BMP180 Callibration constant hell. Retrieves all callibration constants needed to get pressure
+void getCalCoef() //BMP180 Callibration constants. Retrieves all callibration constants needed to get pressure
 {
   int32_t value = 0;
 

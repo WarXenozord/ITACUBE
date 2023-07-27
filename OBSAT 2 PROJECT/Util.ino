@@ -8,14 +8,17 @@
 #define R1 9.8          // 1st divider resistor kOhm
 #define R2 9.58         // 2nd divider resistor kOhm
 #define SAMPLES 8       // Samples at each reading
-#define OFFSET 0.9    // For some reason the analog reading comes with a constant voltage offset
+#define OFFSET 0.7   // For some reason the analog reading comes with a constant voltage offset
 const float vRefScale = (3.3 / 4096.0) * ((R1 + R2) / R2); // Scale from analogread raw output to vBat
 
 int SetBattery(){                                             // Starts battery sensor and checks battery voltage
   pinMode(37, INPUT);                                         // Input mode as we are going to read only
   adc1_config_width(ADC_WIDTH_12Bit);                         // set ADC resolution to max
   adc1_config_channel_atten(ADC1_CHANNEL_1, ADC_ATTEN_DB_11); // set ADC attenuation (allows higher voltage input)
-  int bat =  ReadBattery();                                   // Reads the battery level once (level in %)
+  int bat = 0;                                                // Reads the battery level 8 times (level in %)
+  for(int i = 0; i<7; i++)                    
+    bat += ReadBattery();
+  bat /= 8;                                                   // Takes the mean value
   if(bat < -5 || bat > 105)                                   // If battery level is invalid
     return -51;                                               // Return error
   if(bat < 20)                                                // If battery level is too low
@@ -28,7 +31,7 @@ int ReadBattery(){                                      // Reads Battery level f
   for(int i = 0; i < SAMPLES; i++)                      // gets the defined number of samples
     reading += adc1_get_raw(ADC1_CHANNEL_1);            // sum the values of all samples
   reading /= SAMPLES;                                   // divides by the number of samples to get the average
-  float voltage = reading * vRefScale + OFFSET;                  // converts from raw to battery voltage
+  float voltage = reading * vRefScale + OFFSET;         // converts from raw to battery voltage
   return (int) ((voltage - 3.5)/(4.2 - 3.5) * 100.0);   // converts from battery voltage to power level
 }
 
@@ -73,7 +76,7 @@ void initErrorHandler(int *errorCode, uint8_t sz, bool blockExecution){  // Deal
   for(int i = 0; i<sz; i++){          //Loops through each return Value
     switch(errorCode[i]){                  // Messages for each error
       case 0:   //Not an error
-        return;
+          break;
       case -1:  //Slot for General Error 1
           break;
       case -11:
@@ -146,25 +149,20 @@ void initErrorHandler(int *errorCode, uint8_t sz, bool blockExecution){  // Deal
           Serial.print("Wifi Error 1: Unable to connect to wifi");
           break;
       default:
-        return;
     }
   }
 #endif
 
-  for(int i = 0; i<sz; i++){      // Actions for each error
-    if(errorCode[i] > 10 && errorCode[i] < 20){
-      SetGY87(true);
-      continue;
-    }
-    if(errorCode[i] > 40 && errorCode[i] < 50)
-      SetGPS(true);
-  }
+  uint8_t errors = 0;
+  for(int i = 0; i<sz; i++)      //Loops through each return Value
+    if(errorCode[i] != 0)        //Checking for errors
+      errors++;
 
-  if(blockExecution)
-  while(1)                      // Locks the cubesat on alert message
-  {
-      for(int i = 0; i<sz; i++)      //Loops through each return Value
-        alertMessage(-errorCode[i]);   // Sends an alert message with the error code
+  if(blockExecution && errors != 0){
+    while(1)                      // Locks the cubesat on alert message
+        for(int i = 0; i<sz; i++)      //Loops through each return Value
+          if(errorCode[i] != 0)
+            alertMessage(-errorCode[i]);   // Sends an alert message with the error code
   }
 }
 

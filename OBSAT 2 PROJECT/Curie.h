@@ -11,6 +11,11 @@
 //Team ID provided by OBSAT
 #define TEAM 41
 
+//Hardware
+#define LED_PIN 32 
+#define BUZZER_PIN 33
+#define BUZZERP           //Enable if installed buzzer is passive
+
 //Delay for task functions in RTOS ticks (1 tick = 1ms if normal RTOS)
 #define GY_DELAY 0            //Note: those delays wont change sensor aquisition frequency, 
 #define GG_DELAY 10000        //only the frequency at which they will be read
@@ -26,6 +31,7 @@
 #define GEIGER_FILE 2
 #define BATTERY_FILE 3
 #define LOG_FILE 4
+#define DEMO_FILE 5
 
 //Watchdog Timeout in seconds
 #define WDT_TIMEOUT 15
@@ -56,7 +62,7 @@ const char* serverName = "http://192.168.0.1:8080/";  // Server url = "http://ip
 
 //Miscellaneous
 //#define SILENCE;          //Stops sucess sound
-
+#define DEMOS;              //Enable Demonstrations
 
 //-------------------//
 //--- DATA TYPES ----//

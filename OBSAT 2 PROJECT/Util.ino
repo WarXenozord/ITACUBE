@@ -37,35 +37,43 @@ int ReadBattery(){                                      // Reads Battery level f
 
 //--------------------LED and Buzzer------------------//
 
-void SetLED(){              // Starts LED                              
-  pinMode(32, OUTPUT);      // Pin on output for led
-  digitalWrite(32, HIGH);   // Leds starts on
+void SetLED(){              // Starts LED                              BUZZER_PIN
+  pinMode(LED_PIN, OUTPUT);      // Pin on output for led
+  digitalWrite(LED_PIN, HIGH);   // Leds starts on
 }
 
 void LEDOn(){               // Turns LED on
-  digitalWrite(32, HIGH);
+  digitalWrite(LED_PIN, HIGH);
 }
 
 void LEDOff(){              // Turns LED off
-  digitalWrite(32, LOW);  
+  digitalWrite(LED_PIN, LOW);  
 }
 
 void SetBuzzer(){           // Starts Buzzer
-  pinMode(33, OUTPUT);      // Pin on output for buzzer
+  pinMode(BUZZER_PIN, OUTPUT);      // Pin on output for buzzer
 }
 
 void BuzzerTone(int t){     // Rings the buzzer for t milliseconds
-  digitalWrite(33,HIGH);
-  vTaskDelay(t / portTICK_PERIOD_MS);
-  digitalWrite(33,LOW);
+  #ifndef BUZZERP
+    digitalWrite(BUZZER_PIN,HIGH);
+    vTaskDelay(t / portTICK_PERIOD_MS);
+    digitalWrite(BUZZER_PIN,LOW);
+  #else
+    tone(BUZZER_PIN, 349, t);
+  #endif
 }
 
 void BuzzerOn(int t){       // Turns Buzzer on
-  digitalWrite(33,HIGH);
+  digitalWrite(BUZZER_PIN,HIGH);
 }
 
 void BuzzerOff(int t){      // Turns Buzzer off
-  digitalWrite(33,LOW);
+  #ifndef BUZZERP
+    digitalWrite(BUZZER_PIN,LOW);
+  #else
+    noTone(BUZZER_PIN);
+  #endif
 }
 
 //---------------Error--------------//
@@ -149,6 +157,7 @@ void initErrorHandler(int *errorCode, uint8_t sz, bool blockExecution){  // Deal
           Serial.print("Wifi Error 1: Unable to connect to wifi");
           break;
       default:
+          break;
     }
   }
 #endif

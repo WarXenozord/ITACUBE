@@ -302,7 +302,6 @@ void setup() {
   int errCode[7];               //Variable to store error codes
   
 //------Start Sensors-------//
-  
 #ifdef ENABLE_GY                //If the switch is defined
     errCode[0] = SetGY87(false);//Start GY multisensor. Saves the return code. false because sensor wasn't initiated yet
 #else
@@ -323,8 +322,7 @@ void setup() {
 
   errCode[3] = SetBattery();    //Start Battery Reader, Saves the return code
 
-//-------Start Comms---------//
-  
+//-------Start Comms---------// 
 #ifdef ENABLE_WIFI              //Similar to errCode[0]
   errCode[4] = SetWifi();       //Start and connect wifi. Saves the return code
 #else
@@ -356,6 +354,11 @@ void setup() {
   initErrorHandler(errCode, 7, true);           //Calls the error handler, which will deal with each error individually, blocking the code
 #else
   initErrorHandler(errCode, 7, false);           //Calls the error handler, which will deal with each error individually
+#endif
+
+//-------Does Demos---------//
+#ifdef DEMOS
+  DemoHandler();
 #endif
 
 //----Semaphore Creation----//

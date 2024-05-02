@@ -49,7 +49,7 @@ const char* serverName = "http://192.168.4.1/";*/  // Server url = "http://ip:po
 //----------------//
 
 //Debug
-#define SERIAL_DEBUG      //Activates Serial Debug
+//#define SERIAL_DEBUG      //Activates Serial Debug
 //#define SERIAL_DEBUG_SD   // Prints SD output
 //#define UNSAFE_BOOT       //Runs main code even if errors are detected
 
